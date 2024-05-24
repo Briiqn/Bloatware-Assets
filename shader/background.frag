@@ -3,204 +3,49 @@
 uniform float iTime;
 uniform vec2 iResolution;
 
+//https://www.shadertoy.com/view/4333DM
+mat2 rot(float a){return mat2(cos(a),-sin(a),sin(a),cos(a));}
 
-// "Over the Moon" by Martijn Steinrucken aka BigWings - 2015
-// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
-// Email:countfrolic@gmail.com Twitter:@The_ArtOfCode
-// Facebook: https://www.facebook.com/groups/theartofcode
-//
-// Music: A Miserable Heart - Marek Iwaszkiewicz
-// Soundcloud: https://soundcloud.com/shyprince/a-miserable-heart-piano
-//
-// I made a video tutorial about this effect which you can see here:
-// https://youtu.be/LLZPnh_LK8c
+vec2 p1,p2;
 
-#define PI 3.1415
-#define S(x,y,z) smoothstep(x,y,z)
-#define B(x,y,z,b) S(x, x+b, z)*S(y+b, y, z)
-#define saturate(x) clamp(x,0.,1.)
-
-#define MOD3 vec3(.1031,.11369,.13787)
-
-#define MOONPOS vec2(1.3, .8)
-
-//----------------------------------------------------------------------------------------
-//  1 out, 1 in...
-float hash11(float p) {
-    // From Dave Hoskins
-	vec3 p3  = fract(vec3(p) * MOD3);
-    p3 += dot(p3, p3.yzx + 19.19);
-    return fract((p3.x + p3.y) * p3.z);
+float sdDmd(vec2 p,vec2 sz,float a){
+    p = abs(p * rot(a)) - sz;
+    return max(p.x,p.y);
 }
 
-//  1 out, 2 in...
-float hash12(vec2 p) {
-	vec3 p3  = fract(vec3(p.xyx) * MOD3);
-    p3 += dot(p3, p3.yzx + 19.19);
-    return fract((p3.x + p3.y) * p3.z);
+float scene(vec2 p){
+    p1 = vec2(sin(iTime),cos(iTime))*(sin(iTime)*0.05+0.1);
+    p2 = -p1*1.0;
+    float f = 0.25;
+    return -f*log2(exp2(-length(p-p1)/f)-exp2(-length(p-p2)/f));
 }
 
-float remap(float a, float b, float c, float d, float t) {
-	return ((t-a) / (b-a)) * (d-c) + c;
+vec2 calcNorm(vec2 p){
+    vec2 e = vec2(-1,1) * 0.0002;
+    return normalize(
+    e.xy * scene(e.xy + p) +
+    e.yx * scene(e.yx + p) +
+    e.xx * scene(e.xx + p) +
+    e.yy * scene(e.yy + p)
+    );
 }
 
-float within(float a, float b, float t) {
-	return (t-a) / (b-a);
+void mainImage(out vec4 fragColor,vec2 fragCoord){
+    vec2 uv = (2.0*fragCoord-iResolution.xy)/iResolution.y;
+    vec3 col = vec3(0.0);
+
+    uv *= 0.5;
+
+    vec2 n = calcNorm(uv);
+    float g = atan(n.y,n.x);
+    vec3 c = vec3(3,0,1)*(0.0025/length(uv-p1));
+    c += vec3(1,0,3)*(0.0025/length(uv-p2));
+    col = mix(col,c*10.0,step(sdDmd(mod(uv+0.025,0.05)-0.025,vec2(0.02,0.002),-g),0.0));
+    col += c;
+
+    fragColor = vec4(col,1.0);
 }
 
-float skewbox(vec2 uv, vec3 top, vec3 bottom, float blur) {
-	float y = within(top.z, bottom.z, uv.y);
-    float left = mix(top.x, bottom.x, y);
-    float right = mix(top.y, bottom.y, y);
-
-    float horizontal = B(left, right, uv.x, blur);
-    float vertical = B(bottom.z, top.z, uv.y, blur);
-    return horizontal*vertical;
-}
-
-vec4 pine(vec2 uv, vec2 p, float s, float focus) {
-	uv.x -= .5;
-    float c = skewbox(uv, vec3(.0, .0, 1.), vec3(-.14, .14, .65), focus);
-    c += skewbox(uv, vec3(-.10, .10, .65), vec3(-.18, .18, .43), focus);
-    c += skewbox(uv, vec3(-.13, .13, .43), vec3(-.22, .22, .2), focus);
-    c += skewbox(uv, vec3(-.04, .04, .2), vec3(-.04, .04, -.1), focus);
-
-    vec4 col = vec4(1.,1.,1.,0.);
-    col.a = c;
-
-    float shadow = skewbox(uv.yx, vec3(.6, .65, .13), vec3(.65, .65, -.1), focus);
-    shadow += skewbox(uv.yx, vec3(.43, .43, .13), vec3(.36, .43, -.2), focus);
-    shadow += skewbox(uv.yx, vec3(.15, .2, .08), vec3(.17, .2, -.08), focus);
-
-    col.rgb = mix(col.rgb, col.rgb*.8, shadow);
-
-    return col;
-}
-
-float getheight(float x) {
-    return sin(x) + sin(x*2.234+.123)*.5 + sin(x*4.45+2.2345)*.25;
-}
-
-vec4 landscape(vec2 uv, float d, float p, float f, float a, float y, float seed, float focus) {
-	uv *= d;
-    float x = uv.x*PI*f+p;
-    float c = getheight(x)*a+y;
-
-    float b = floor(x*5.)/5.+.1;
-    float h =  getheight(b)*a+y;
-
-    float e = fwidth(uv.y);
-
-    vec4 col = vec4(S(c+e, c-e, uv.y));
-    col.rgb *= mix(0.9, 1., abs(uv.y-c)*20.);
-
-    x *= 5.;
-    float id = floor(x);
-    float n = hash11(id+seed);
-
-    x = fract(x);
-
-    y = (uv.y - h)*mix(5., 3., n)*3.5;
-    float treeHeight = (.07/d) * mix(1.3, .5, n);
-    y = within(h, h+treeHeight, uv.y);
-    x += (n-.5)*.6;
-    vec4 pineCol = pine(vec2(x, y/d), vec2(0.), 1., focus+d*.1);
-    //col += pineCol;
-    col.rgb = mix(col.rgb, pineCol.rgb, pineCol.a);
-    col.a = max(col.a, pineCol.a);
-
-    return saturate(col);
-}
-
-vec4 gradient(vec2 uv) {
-
-	float c = 1.-length(MOONPOS-uv)/1.4;
-
-    vec4 col = vec4(c);
-
-    return col;
-}
-
-float circ(vec2 uv, vec2 pos, float radius, float blur) {
-	float dist = length(uv-pos);
-    return S(radius+blur, radius-blur, dist);
-}
-
-vec4 moon(vec2 uv) {
-    float c = circ(uv, MOONPOS, 0.07, 0.001);
-    c *= 1.0 - circ(uv, MOONPOS + vec2(0.03), 0.07, 0.001) * 0.95;
-    c = saturate(c);
-
-    vec4 col = vec4(c);
-    // Adjust the RGB values for the pinkish-purple tint
-    col.rgb *= vec3(0.6, 0.2, 0.6);
-
-    return col;
-}
-
-vec4 moonglow(vec2 uv, float foreground) {
-    float c = circ(uv, MOONPOS, 0.1, 0.2);
-
-    vec4 col = vec4(c);
-    // Adjust the RGB values for the pinkish-purple tint
-    col.rgb *= vec3(0.6, 0.2, 0.6);
-
-    return col;
-}
-
-float stars(vec2 uv, float t) {
-    t*=3.;
-
-    float n1 = hash12(uv*10000.);
-    float n2 = hash12(uv*11234.);
-    float alpha1 = pow(n1, 20.);
-    float alpha2 = pow(n2, 20.);
-
-    float twinkle = sin((uv.x-t+cos(uv.y*20.+t))*10.);
-    twinkle *= cos((uv.y*.234-t*3.24+sin(uv.x*12.3+t*.243))*7.34);
-    twinkle = (twinkle + 1.)/2.;
-    return alpha1 * alpha2 * twinkle;
-}
-
-void mainImage( out vec4 fragColor, in vec2 fragCoord )
-{
-	vec2 uv = fragCoord.xy / iResolution.xy;
-    float t = iTime*.05;
-
-    vec2 bgUV = uv*vec2(iResolution.x/iResolution.y, 1.);
-    vec4 col = gradient(bgUV)*.8;
-    col += moon(bgUV);
-    col += stars(uv, t);
-
-    float dist = .90;
-    float height = -.01;
-    float amplitude = .02;
-
-    dist = 1.;
-    height = .55;
-
-    vec4 trees = vec4(0.);
-    for(float i=0.; i<10.; i++) {
-    	vec4 layer = landscape(uv, dist, t+i, 3., amplitude, height, i, .01);
-  layer.rgb *= mix(vec3(0.1, 0.1, 0.2), vec3(0.6, 0.2, 0.6), 1.0 - i / 10.0);
-trees = mix(trees, layer, layer.a);
-
-dist -= 0.1;
-height -= 0.06;
-}
-col = mix(col, trees, trees.a);
-
-col += moonglow(bgUV, 1.);
-col = saturate(col);
-
-vec4 foreground = landscape(uv, 0.02, t, 3.0, 0.0, -0.04, 1.0, 0.1);
-foreground.rgb *= vec3(0.1, 0.1, 0.2) * 0.5;
-
-
-    col = mix(col, foreground, foreground.a);
-
-    fragColor = vec4(col);
-}
 void main() {
     mainImage(gl_FragColor, gl_FragCoord.xy);
 }
